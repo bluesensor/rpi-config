@@ -3,126 +3,136 @@ set -euo pipefail
 
 echo "Starting system configuration..."
 
-# Actualización del sistema
+# -------------------------
+# System update
+# -------------------------
 echo "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-# Configuración de UART
+# -------------------------
+# UART configuration
+# -------------------------
 echo "Configuring UART..."
 if ! grep -q "enable_uart=1" /boot/config.txt; then
     echo "enable_uart=1" | sudo tee -a /boot/config.txt
 else
-    echo "UART already enabled in config.txt"
+    echo "UART already enabled"
 fi
 
 sudo systemctl stop serial-getty@ttyS0.service || true
 sudo systemctl disable serial-getty@ttyS0.service || true
 
-# Eliminar console=serial0,115200 de cmdline.txt
 if grep -q "console=serial0,115200" /boot/cmdline.txt; then
-    echo "Removing serial console from cmdline.txt..."
+    echo "Removing serial console..."
     sudo sed -i 's/console=serial0,115200//g' /boot/cmdline.txt
-    sudo sed -i 's/  / /g' /boot/cmdline.txt  # Eliminar espacios duplicados
+    sudo sed -i 's/  / /g' /boot/cmdline.txt
 fi
 
-# Instalación de paquetes esenciales
+# -------------------------
+# Essential packages (Trixie)
+# -------------------------
 echo "Installing essential packages..."
-sudo apt install -y vim cutecom fail2ban python3-pip speedtest-cli nmap
+sudo apt install -y \
+    vim \
+    cutecom \
+    fail2ban \
+    python3-pip \
+    speedtest-cli \
+    nmap \
+    gpsd-clients
 
-# Verificar la versión de Nmap
-echo "Checking Nmap version..."
-nmap --version
+# -------------------------
+# Vim + Ultimate Vim
+# -------------------------
+echo "Setting up Vim..."
 
-# Instalación de Oh My Bash (mejorada)
-echo "Checking Oh My Bash installation..."
-if [ ! -d ~/.oh-my-bash ]; then
-    echo "Installing Oh My Bash..."
-    bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)" || {
-        echo "Oh My Bash installation failed"
-        exit 1
-    }
-else
-    echo "Oh My Bash already installed. Skipping..."
-fi
-
-# Configuración de Vim
-echo "Setting up Vim environment..."
-if [ ! -d ~/.vim_runtime ]; then
+if [ ! -d "$HOME/.vim_runtime" ]; then
+    echo "Installing Ultimate Vim..."
     git clone --depth=1 https://github.com/amix/vimrc.git ~/.vim_runtime
-    bash ~/.vim_runtime/install_awesome_vimrc.sh
+    sh ~/.vim_runtime/install_awesome_vimrc.sh
 else
-    echo "Vim configuration already exists"
+    echo "Ultimate Vim already installed"
 fi
 
-# Plugins de Vim
+# -------------------------
+# Vim Plugins
+# -------------------------
 echo "Installing Vim plugins..."
-PLUGINS=(
-    "airblade/vim-gitgutter"
-    "pangloss/vim-javascript"
-    "tpope/vim-jdaddy"
-    "scrooloose/nerdcommenter"
-    "MTDL9/vim-log-highlighting"
+
+VIM_PLUGINS=(
+    "airblade/vim-gitgutter vim-gitgutter"
+    "pangloss/vim-javascript vim-javascript"
+    "tpope/vim-jdaddy vim-jdaddy"
+    "scrooloose/nerdcommenter nerdcommenter"
+    "MTDL9/vim-log-highlighting vim-log-highlighting"
 )
 
-for plugin in "${PLUGINS[@]}"; do
-    dir_name=$(basename "$plugin")
-    if [ ! -d "~/.vim_runtime/my_plugins/$dir_name" ]; then
-        git clone --depth=1 "https://github.com/$plugin.git" "~/.vim_runtime/my_plugins/$dir_name"
+for plugin in "${VIM_PLUGINS[@]}"; do
+    repo=$(echo $plugin | awk '{print $1}')
+    dir=$(echo $plugin | awk '{print $2}')
+
+    if [ ! -d "$HOME/.vim_runtime/my_plugins/$dir" ]; then
+        git clone https://github.com/$repo.git "$HOME/.vim_runtime/my_plugins/$dir"
+    else
+        echo "Plugin $dir already installed"
     fi
 done
 
-# Configuración personalizada de Vim
-echo "Applying custom Vim configuration..."
-curl -fsSLo ~/.vim_runtime/my_configs.vim https://gist.githubusercontent.com/branny-dev/141770d40dd364403555e85304201ca7/raw/f53157986a9fa661dbaf66a79c2b786537f7b7c1/my_configs.vim
+# Custom Vim config
+echo "Applying custom Vim config..."
+curl -fsSLo ~/.vim_runtime/my_configs.vim \
+https://gist.githubusercontent.com/branny-dev/141770d40dd364403555e85304201ca7/raw/f53157986a9fa661dbaf66a79c2b786537f7b7c1/my_configs.vim
 
-# Configuración de zona horaria
-echo "Setting timezone to America/Guayaquil..."
+# -------------------------
+# Timezone
+# -------------------------
+echo "Setting timezone..."
 sudo timedatectl set-timezone America/Guayaquil
 
-# Configuración de RTC (DS3231)
-echo "Configuring RTC module..."
+# -------------------------
+# RTC DS3231
+# -------------------------
+echo "Configuring RTC..."
 if [ ! -d "config-rtc" ]; then
     git clone https://github.com/Seeed-Studio/pi-hats.git config-rtc
 fi
 
 (
-    cd config-rtc/tools || { echo "Failed to enter RTC tools directory"; exit 1; }
+    cd config-rtc/tools
     sudo ./install.sh -u rtc_ds3231
 )
-echo "Checking I2C devices (look for 68 for RTC):"
-sudo i2cdetect -y 1
 
-# Instalación de Docker
+sudo i2cdetect -y 1 || true
+
+# -------------------------
+# Docker
+# -------------------------
 echo "Installing Docker..."
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"
 
-# Instalación de dependencias Python
+# -------------------------
+# Python libraries
+# -------------------------
 echo "Installing Python libraries..."
-PYTHON_PKGS=(
-    digi-xbee
-    rich
+pip3 install --break-system-packages \
+    digi-xbee \
+    rich \
     schedule
-)
-for pkg in "${PYTHON_PKGS[@]}"; do
-    sudo pip3 install "$pkg"
-done
 
-# Test de velocidad de red
-echo "Running network speed test..."
-if command -v speedtest &>/dev/null; then
-    speedtest || echo "Speedtest completed with warnings (check connection)"
-else
-    echo "Speedtest CLI not installed. Installing now..."
-    sudo apt install -y speedtest-cli && speedtest
-fi
+# -------------------------
+# Network test
+# -------------------------
+echo "Running speedtest..."
+speedtest || echo "Speedtest finished with warnings"
 
-# Aplicar configuraciones
+# -------------------------
+# Finish
+# -------------------------
 echo "Applying environment changes..."
 source ~/.bashrc
 
 echo "Configuration completed successfully."
-echo "A system reboot is required to apply UART changes and other configurations."
-echo "Rebooting in 10 seconds... (press Ctrl+C to cancel)"
+echo "Rebooting in 10 seconds (Ctrl+C to cancel)..."
 sleep 10
 sudo reboot
