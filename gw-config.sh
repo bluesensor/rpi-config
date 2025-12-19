@@ -10,29 +10,26 @@ echo "Configuring locales..."
 sudo locale-gen es_EC.UTF-8 || true
 sudo localectl set-locale LANG=es_EC.UTF-8 || true
 
-# -------------------------
-# System update
-# -------------------------
+# Actualización del sistema
 echo "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-# -------------------------
-# UART configuration
-# -------------------------
+# Configuración de UART
 echo "Configuring UART..."
 if ! grep -q "enable_uart=1" /boot/config.txt; then
     echo "enable_uart=1" | sudo tee -a /boot/config.txt
 else
-    echo "UART already enabled"
+    echo "UART already enabled in config.txt"
 fi
 
 sudo systemctl stop serial-getty@ttyS0.service || true
 sudo systemctl disable serial-getty@ttyS0.service || true
 
+# Eliminar console=serial0,115200 de cmdline.txt
 if grep -q "console=serial0,115200" /boot/cmdline.txt; then
-    echo "Removing serial console..."
+    echo "Removing serial console from cmdline.txt..."
     sudo sed -i 's/console=serial0,115200//g' /boot/cmdline.txt
-    sudo sed -i 's/  / /g' /boot/cmdline.txt
+    sudo sed -i 's/  / /g' /boot/cmdline.txt  # Eliminar espacios duplicados
 fi
 
 # -------------------------
@@ -66,7 +63,6 @@ if [ ! -d ~/.oh-my-bash ]; then
 else
     echo "Oh My Bash already installed. Skipping..."
 fi
-
 
 # -------------------------
 # Vim + Ultimate Vim
@@ -111,6 +107,7 @@ curl -fsSLo ~/.vim_runtime/my_configs.vim \
 https://gist.githubusercontent.com/branny-dev/141770d40dd364403555e85304201ca7/raw/f53157986a9fa661dbaf66a79c2b786537f7b7c1/my_configs.vim
 
 
+
 # -------------------------
 # RTC DS3231
 # -------------------------
@@ -143,17 +140,14 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "$USER"
 
-
-# Instalación de dependencias Python
+# -------------------------
+# Python libraries
+# -------------------------
 echo "Installing Python libraries..."
-PYTHON_PKGS=(
-    digi-xbee
-    rich
+pip3 install --break-system-packages \
+    digi-xbee \
+    rich \
     schedule
-)
-for pkg in "${PYTHON_PKGS[@]}"; do
-    sudo pip3 install "$pkg"
-done
 
 # Test de velocidad de red
 echo "Running network speed test..."
@@ -163,41 +157,6 @@ else
     echo "Speedtest CLI not installed. Installing now..."
     sudo apt install -y speedtest-cli && speedtest
 fi
-
-# Instalación de NVM (Node Version Manager)
-echo "Installing NVM (Node Version Manager)..."
-if ! command -v nvm &>/dev/null; then
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-    export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-    echo "NVM installed successfully."
-else
-    echo "NVM is already installed. Skipping..."
-fi
-
-# Cargar NVM manualmente en caso de que no esté disponible
-if ! command -v nvm &>/dev/null; then
-    export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-fi
-
-# Instalación de Node.js usando NVM
-echo "Installing Node.js version 14.15.5 using NVM..."
-nvm install 14.15.5
-nvm use 14.15.5
-echo "Node.js version $(node --version) installed and activated."
-
-# Instalación de PM2
-echo "Installing PM2 globally..."
-npm install pm2 -g
-echo "PM2 installed successfully."
-
-# Configuración de PM2 Logrotate
-echo "Installing PM2 Logrotate module..."
-pm2 install pm2-logrotate
-echo "PM2 Logrotate module installed successfully."
 
 # Aplicar configuraciones
 echo "Applying environment changes..."
