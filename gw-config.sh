@@ -50,6 +50,24 @@ sudo apt install -y \
     curl \
     gnupg
 
+
+# Verificar la versión de Nmap
+echo "Checking Nmap version..."
+nmap --version
+
+# Instalación de Oh My Bash (mejorada)
+echo "Checking Oh My Bash installation..."
+if [ ! -d ~/.oh-my-bash ]; then
+    echo "Installing Oh My Bash..."
+    bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)" || {
+        echo "Oh My Bash installation failed"
+        exit 1
+    }
+else
+    echo "Oh My Bash already installed. Skipping..."
+fi
+
+
 # -------------------------
 # Vim + Ultimate Vim
 # -------------------------
@@ -92,11 +110,6 @@ echo "Applying custom Vim config..."
 curl -fsSLo ~/.vim_runtime/my_configs.vim \
 https://gist.githubusercontent.com/branny-dev/141770d40dd364403555e85304201ca7/raw/f53157986a9fa661dbaf66a79c2b786537f7b7c1/my_configs.vim
 
-# -------------------------
-# Timezone
-# -------------------------
-echo "Setting timezone..."
-sudo timedatectl set-timezone America/Guayaquil
 
 # -------------------------
 # RTC DS3231
@@ -130,29 +143,68 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "$USER"
 
-# -------------------------
-# Python libraries
-# -------------------------
+
+# Instalación de dependencias Python
 echo "Installing Python libraries..."
-pip3 install --break-system-packages \
-    digi-xbee \
-    rich \
+PYTHON_PKGS=(
+    digi-xbee
+    rich
     schedule
+)
+for pkg in "${PYTHON_PKGS[@]}"; do
+    sudo pip3 install "$pkg"
+done
 
-# -------------------------
-# Network test
-# -------------------------
-echo "Running speedtest..."
-speedtest || echo "Speedtest finished with warnings"
+# Test de velocidad de red
+echo "Running network speed test..."
+if command -v speedtest &>/dev/null; then
+    speedtest || echo "Speedtest completed with warnings (check connection)"
+else
+    echo "Speedtest CLI not installed. Installing now..."
+    sudo apt install -y speedtest-cli && speedtest
+fi
 
-# -------------------------
-# Finish
-# -------------------------
+# Instalación de NVM (Node Version Manager)
+echo "Installing NVM (Node Version Manager)..."
+if ! command -v nvm &>/dev/null; then
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+    echo "NVM installed successfully."
+else
+    echo "NVM is already installed. Skipping..."
+fi
+
+# Cargar NVM manualmente en caso de que no esté disponible
+if ! command -v nvm &>/dev/null; then
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+fi
+
+# Instalación de Node.js usando NVM
+echo "Installing Node.js version 14.15.5 using NVM..."
+nvm install 14.15.5
+nvm use 14.15.5
+echo "Node.js version $(node --version) installed and activated."
+
+# Instalación de PM2
+echo "Installing PM2 globally..."
+npm install pm2 -g
+echo "PM2 installed successfully."
+
+# Configuración de PM2 Logrotate
+echo "Installing PM2 Logrotate module..."
+pm2 install pm2-logrotate
+echo "PM2 Logrotate module installed successfully."
+
+# Aplicar configuraciones
 echo "Applying environment changes..."
-# Nota: source solo afecta al shell actual, el reboot aplicará todo globalmente
-source ~/.bashrc || true
+source ~/.bashrc
 
 echo "Configuration completed successfully."
-echo "Rebooting in 10 seconds (Ctrl+C to cancel)..."
+echo "A system reboot is required to apply UART changes and other configurations."
+echo "Rebooting in 10 seconds... (press Ctrl+C to cancel)"
 sleep 10
 sudo reboot
