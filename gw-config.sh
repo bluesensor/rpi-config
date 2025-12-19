@@ -4,6 +4,13 @@ set -euo pipefail
 echo "Starting system configuration..."
 
 # -------------------------
+# Locales fix (Evita errores de Perl)
+# -------------------------
+echo "Configuring locales..."
+sudo locale-gen es_EC.UTF-8 || true
+sudo localectl set-locale LANG=es_EC.UTF-8 || true
+
+# -------------------------
 # System update
 # -------------------------
 echo "Updating system packages..."
@@ -39,7 +46,9 @@ sudo apt install -y \
     python3-pip \
     speedtest-cli \
     nmap \
-    gpsd-clients
+    gpsd-clients \
+    curl \
+    gnupg
 
 # -------------------------
 # Vim + Ultimate Vim
@@ -105,10 +114,20 @@ fi
 sudo i2cdetect -y 1 || true
 
 # -------------------------
-# Docker
+# Docker (Fix para Trixie 32-bit)
 # -------------------------
 echo "Installing Docker..."
-curl -fsSL https://get.docker.com | sudo sh
+# Trixie 32-bit no tiene repo oficial aún, usamos el de Bookworm
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/raspbian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/raspbian bookworm stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "$USER"
 
 # -------------------------
@@ -130,7 +149,8 @@ speedtest || echo "Speedtest finished with warnings"
 # Finish
 # -------------------------
 echo "Applying environment changes..."
-source ~/.bashrc
+# Nota: source solo afecta al shell actual, el reboot aplicará todo globalmente
+source ~/.bashrc || true
 
 echo "Configuration completed successfully."
 echo "Rebooting in 10 seconds (Ctrl+C to cancel)..."
