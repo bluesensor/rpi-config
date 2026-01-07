@@ -3,12 +3,9 @@ set -euo pipefail
 
 echo "Starting system configuration..."
 
-# -------------------------
-# Locales fix (Evita errores de Perl)
-# -------------------------
-echo "Configuring locales..."
-sudo locale-gen es_EC.UTF-8 || true
-sudo localectl set-locale LANG=es_EC.UTF-8 || true
+echo "Configuring locales to English (US)..."
+sudo locale-gen en_US.UTF-8 || true
+sudo localectl set-locale LANG=en_US.UTF-8 || true
 
 # Actualización del sistema
 echo "Updating system packages..."
