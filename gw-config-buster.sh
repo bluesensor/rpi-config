@@ -138,7 +138,7 @@ sudo apt-get install \
 # Python libraries
 # -------------------------
 echo "Installing Python libraries..."
-pip3 install --break-system-packages \
+pip3 install \
     digi-xbee \
     rich \
     schedule
