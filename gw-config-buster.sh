@@ -121,7 +121,7 @@ fi
 sudo i2cdetect -y 1 || true
 
 # -------------------------
-# Docker (Fix para Trixie 32-bit)
+# Docker (Fix para Buster 32-bit)
 # -------------------------
 echo "Installing Docker..."
 sudo apt-get update
