@@ -273,17 +273,22 @@ mkdir -p "\$(dirname "\$0")/logs"
 
 while true; do
     parent_path=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" || exit ; pwd -P)
-    timestamp=\$(date +"%Y-%m-%d %H:%M:%S")
 
-    # Blocking read: waits until a command is written to the FIFO
+    # Blocking wait
     cmd=\$(cat $PIPE_DIR/$PIPE_FILE)
 
-    echo "[\${timestamp}] - Command received" >> "\$parent_path/logs/commands.log"
+    # Calculate timestamp AFTER receiving command
+    timestamp=\$(date +"%Y-%m-%d %H:%M:%S")
 
-    # Execute command and log stdout/stderr
-    eval "\$cmd" >> "\$parent_path/logs/commands.log" 2>&1
+    # Log command received
+    echo "[\${timestamp}] - Command executed: \${cmd}" >> "\$parent_path/logs/system/commands.log"
 
-    echo "[\${timestamp}] - Command finished" >> "\$parent_path/logs/commands.log"
+    # Execute if not empty
+    if [ -n "\${cmd}" ]; then
+        eval "\${cmd}" >> "\$parent_path/logs/system/commands.log" 2>&1
+    fi
+
+    echo "[\${timestamp}] - Command finished" >> "\$parent_path/logs/system/commands.log"
 done
 END_SCRIPT
 
