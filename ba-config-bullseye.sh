@@ -30,9 +30,8 @@ echo "🚀 Starting Blueacoustic installation on Debian Bullseye..."
 echo "--- 1. Configuring base system ---"
 
 # Timezone and locale
-timedatectl set-timezone America/Guayaquil
-locale-gen en_US.UTF-8
-localectl set-locale LANG=en_US.UTF-8
+sudo locale-gen en_US.UTF-8
+sudo localectl set-locale LANG=en_US.UTF-8
 
 # System update
 echo "Updating repositories and packages..."
