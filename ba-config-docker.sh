@@ -8,30 +8,46 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}🚀 Starting BlueAcoustic installation...${NC}"
 
 # ---------------------------------------------------------
-# 1. Directory Configuration (Using absolute paths)
+# 1. Directory Configuration
 # ---------------------------------------------------------
-# Base project directory
 BASE_DIR="/home/bs/blueacoustic"
 LOG_DIR="$BASE_DIR/logs"
 
 echo -e "${GREEN}📂 Creating directories at $BASE_DIR...${NC}"
-# Create project and log directories
 mkdir -p "$LOG_DIR"
 
-# Configure System Pipe directory (Required by docker-compose volumes)
 echo -e "${GREEN}🔧 Configuring System Pipe at /opt/cmdpipe...${NC}"
 sudo mkdir -p /opt/cmdpipe
-# Set permissions to allow read/write access for the container
 sudo chmod 777 /opt/cmdpipe
 
-# Navigate to the project directory
+# ---------------------------------------------------------
+# 2. Configure UDEV Rules (USB/Serial Symlinks)
+# ---------------------------------------------------------
+# This creates permanent names for USB devices so Docker can find them reliably
+echo -e "${GREEN}🔌 Configuring USB Serial rules (udev)...${NC}"
+
+# Write rules to /etc/udev/rules.d/10-usb-serial.rules
+# We use 'sudo tee' to write to protected system directories
+cat <<EOF | sudo tee /etc/udev/rules.d/10-usb-serial.rules > /dev/null
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", GROUP="dialout", SYMLINK+="baXB0"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", GROUP="dialout", SYMLINK+="baENE0"
+KERNEL=="ttyAMA0", MODE="0666",  GROUP="dialout", SYMLINK+="baMIC0"
+EOF
+
+# Reload rules and trigger events to apply changes immediately
+echo -e "${GREEN}🔄 Reloading udev rules...${NC}"
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+echo -e "   -> Rules applied. Check with 'ls -l /dev/ba*'"
+
+# Navigate to project dir
 cd "$BASE_DIR" || { echo "❌ Could not enter $BASE_DIR"; exit 1; }
 
 # ---------------------------------------------------------
-# 2. Generate storage.json
+# 3. Generate storage.json
 # ---------------------------------------------------------
-# Mapping Python class attributes to JSON format
-echo -e "${GREEN}📝 Generating storage.json with default values...${NC}"
+echo -e "${GREEN}📝 Generating storage.json...${NC}"
 cat <<EOF > storage.json
 {
     "gateway_address_64": null,
@@ -55,12 +71,10 @@ cat <<EOF > storage.json
     "high_pass_frequency": 2600
 }
 EOF
-
-# Set write permissions so the Docker container (internal user) can update it
 chmod 666 storage.json
 
 # ---------------------------------------------------------
-# 3. Generate docker-compose.yml
+# 4. Generate docker-compose.yml
 # ---------------------------------------------------------
 echo -e "${GREEN}📝 Generating docker-compose.yml...${NC}"
 cat <<EOF > docker-compose.yml
@@ -72,13 +86,13 @@ services:
     image: dmaroto213/blueacoustic:latest
     restart: always
 
-    # Use host networking to access hardware interfaces easily
     network_mode: "host"
 
     devices:
       - /dev/input
       - /dev/snd
       - /dev/snd:/dev/snd
+      # Mapping the symlinks created by udev rules
       - /dev/baXB0
       - /dev/baENE0
       - /dev/ttyAMA3
@@ -94,25 +108,20 @@ services:
       - PYTHONUNBUFFERED=1
 
     volumes:
-      # 1. The Pipe (System command pipe)
       - /opt/cmdpipe:/hostpipe
-      # 2. Logs and Storage (Persisted in user home)
       - /home/bs/blueacoustic/logs:/blueacoustic/logs
       - /home/bs/blueacoustic/storage.json:/blueacoustic/storage.json
-      # 3. System Configs (Host hardware/audio configs)
       - /boot/config.txt:/host/boot/config.txt
       - /run/user/1000/pulse/native:/run/user/1000/pulse/native
       - /home/bs/.config/pulse/:/root/.config/pulse/
-      # 4. Timezone Info (Sync container time with host)
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 EOF
 
 # ---------------------------------------------------------
-# 4. Deployment
+# 5. Deployment
 # ---------------------------------------------------------
 echo -e "${BLUE}🐳 Pulling image and starting container...${NC}"
-# Using sudo as Docker usually requires root privileges
 sudo docker compose up -d --pull always
 
 echo -e "${GREEN}✅ Installation completed successfully!${NC}"
