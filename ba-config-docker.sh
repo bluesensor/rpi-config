@@ -11,7 +11,7 @@ echo -e "${BLUE}🚀 Starting BlueAcoustic installation...${NC}"
 # 1. Directory Configuration
 # ---------------------------------------------------------
 BASE_DIR="/home/bs/blueacoustic"
-LOG_DIR="$BASE_DIR/logs"
+LOG_DIR="$BASE_DIR/logs/system" # Updated to ensure system subdir exists
 
 echo -e "${GREEN}📂 Creating directories at $BASE_DIR...${NC}"
 mkdir -p "$LOG_DIR"
@@ -19,27 +19,25 @@ mkdir -p "$LOG_DIR"
 echo -e "${GREEN}🔧 Configuring System Pipe at /opt/cmdpipe...${NC}"
 sudo mkdir -p /opt/cmdpipe
 sudo chmod 777 /opt/cmdpipe
+# Create the named pipe file if it doesn't exist
+if [ ! -p /opt/cmdpipe/dockerpipe ]; then
+    sudo mkfifo /opt/cmdpipe/dockerpipe
+    sudo chmod 666 /opt/cmdpipe/dockerpipe
+fi
 
 # ---------------------------------------------------------
 # 2. Configure UDEV Rules (USB/Serial Symlinks)
 # ---------------------------------------------------------
-# This creates permanent names for USB devices so Docker can find them reliably
 echo -e "${GREEN}🔌 Configuring USB Serial rules (udev)...${NC}"
-
-# Write rules to /etc/udev/rules.d/10-usb-serial.rules
-# We use 'sudo tee' to write to protected system directories
 cat <<EOF | sudo tee /etc/udev/rules.d/10-usb-serial.rules > /dev/null
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", GROUP="dialout", SYMLINK+="baXB0"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", GROUP="dialout", SYMLINK+="baENE0"
 KERNEL=="ttyAMA0", MODE="0666",  GROUP="dialout", SYMLINK+="baMIC0"
 EOF
 
-# Reload rules and trigger events to apply changes immediately
 echo -e "${GREEN}🔄 Reloading udev rules...${NC}"
 sudo udevadm control --reload-rules
 sudo udevadm trigger
-
-echo -e "   -> Rules applied. Check with 'ls -l /dev/ba*'"
 
 # Navigate to project dir
 cd "$BASE_DIR" || { echo "❌ Could not enter $BASE_DIR"; exit 1; }
@@ -85,14 +83,12 @@ services:
     container_name: blueacoustic
     image: dmaroto213/blueacoustic:latest
     restart: always
-
     network_mode: "host"
 
     devices:
       - /dev/input
       - /dev/snd
       - /dev/snd:/dev/snd
-      # Mapping the symlinks created by udev rules
       - /dev/baXB0
       - /dev/baENE0
       - /dev/ttyAMA3
@@ -119,11 +115,56 @@ services:
 EOF
 
 # ---------------------------------------------------------
-# 5. Deployment
+# 5. Generate dockerpipe.sh (Host Listener)
+# ---------------------------------------------------------
+echo -e "${GREEN}📝 Generating dockerpipe.sh script...${NC}"
+
+# We use 'EOF' (quoted) to prevent $ variables from expanding now
+cat <<'EOF' > dockerpipe.sh
+#!/bin/bash
+
+# Ensure the logs directory exists before starting
+mkdir -p "$(dirname "$0")/logs/system"
+
+# Calculate the parent path
+parent_path=$(cd "$(dirname "${BASH_SOURCE[0]}")" || exit ; pwd -P)
+
+while true; do
+    # 1. Blocking Wait: The script pauses here until data arrives in the pipe
+    cmd=$(cat /opt/cmdpipe/dockerpipe)
+
+    # 2. Capture timestamp NOW
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # 3. Log WHICH command was received
+    echo "[$timestamp] - Command executed: $cmd" >> "$parent_path/logs/system/commands.log"
+
+    # 4. Execute the command and append stdout/stderr to the log
+    if [ -n "$cmd" ]; then
+        eval "$cmd" >> "$parent_path/logs/system/commands.log" 2>&1
+    fi
+
+    echo "[$timestamp] - Command finished" >> "$parent_path/logs/system/commands.log"
+done
+EOF
+
+# Make it executable
+chmod +x dockerpipe.sh
+
+# ---------------------------------------------------------
+# 6. Fix Permissions (Crucial for Permission Denied errors)
+# ---------------------------------------------------------
+echo -e "${GREEN}🔒 Fixing ownership for user 'bs'...${NC}"
+# Assuming the user is 'bs', we ensure they own the directory
+# so the service (running as bs) can write to logs/system/commands.log
+sudo chown -R bs:bs "$BASE_DIR"
+
+# ---------------------------------------------------------
+# 7. Deployment
 # ---------------------------------------------------------
 echo -e "${BLUE}🐳 Pulling image and starting container...${NC}"
 sudo docker compose up -d --pull always
 
 echo -e "${GREEN}✅ Installation completed successfully!${NC}"
 echo -e "   Project Location: $BASE_DIR"
-echo -e "   View Logs: docker logs -f blueacoustic"
+echo -e "   Hostpipe Script: $BASE_DIR/dockerpipe.sh"
