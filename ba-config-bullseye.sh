@@ -5,7 +5,7 @@ set -e
 # BLUEACOUSTIC INSTALLER (Debian Bullseye)
 # ==========================================
 # This script provisions a Raspberry Pi from scratch for Blueacoustic.
-# Includes: Base system, UART, Docker, BS environment, Vim, GPSD and Dockerpipe IPC.
+# Includes: System, Advanced UART, Audio, Graphics, Docker, Vim (Inline Config), GPSD and Dockerpipe.
 
 TARGET_USER="bs"
 USER_HOME="/home/$TARGET_USER"
@@ -26,7 +26,6 @@ echo "🚀 Starting Blueacoustic installation on Debian Bullseye..."
 
 # ==========================================
 # 1. Base System Configuration
-#    (Locales, Timezone, Updates)
 # ==========================================
 echo "--- 1. Configuring base system ---"
 
@@ -40,6 +39,7 @@ echo "Updating repositories and packages..."
 apt update && apt upgrade -y
 
 # Essential system packages
+# Added: libegl1, libgles2, fail2ban
 echo "Installing system dependencies..."
 apt install -y \
     vim \
@@ -58,34 +58,68 @@ apt install -y \
     libffi-dev \
     libssl-dev \
     python3-dev \
-    build-essential
+    build-essential \
+    libegl1 \
+    libgles2
 
 # ==========================================
-# 2. Hardware Configuration (UART & GPSD)
+# 2. Hardware Configuration
+#    (Audio, Graphics, UART, GPS)
 # ==========================================
-echo "--- 2. Configuring hardware (UART & GPS) ---"
+echo "--- 2. Configuring Hardware ---"
 
-# Enable UART in /boot/config.txt
+# 2.1 Audio Configuration
+echo "Configuring Audio Defaults (Card 1)..."
+cat <<EOF > /etc/asound.conf
+defaults.pcm.card 1
+defaults.ctl.card 1
+EOF
+
+# 2.2 Graphics Symlinks (Legacy BRCM support)
+echo "Creating Graphics Symlinks..."
+# Use -sf to force creation if they exist
+ln -sf /usr/lib/arm-linux-gnueabihf/libEGL.so.1 /usr/lib/arm-linux-gnueabihf/libbrcmEGL.so
+ln -sf /usr/lib/arm-linux-gnueabihf/libGLESv2.so.2 /usr/lib/arm-linux-gnueabihf/libbrcmGLESv2.so
+ls -l /usr/lib/arm-linux-gnueabihf/libbrcm*
+
+# 2.3 UART & Config.txt
+echo "Configuring /boot/config.txt..."
+
+# Basic Enable
 if ! grep -q "enable_uart=1" /boot/config.txt; then
     echo "enable_uart=1" >> /boot/config.txt
-    echo "UART enabled in config.txt"
-else
-    echo "UART was already enabled."
 fi
 
-# Disable serial console service
+# Advanced UART Overlays
+# We check if uart5 is already there to avoid duplicating the block on re-runs
+if ! grep -q "dtoverlay=uart5" /boot/config.txt; then
+    echo "Appending Advanced UART configurations..."
+    cat <<EOF >> /boot/config.txt
+
+# --- Blueacoustic UART Config ---
+dtoverlay=uart0,txd0_pin=32,rxd0_pin=33,pin_func=7
+dtoverlay=uart1,txd1_pin=14,rxd1_pin=15
+dtoverlay=uart2,txd2_pin=0,rxd2_pin=1
+dtoverlay=uart3,txd3_pin=4,rxd3_pin=5
+dtoverlay=uart4,txd4_pin=8,rxd4_pin=9
+dtoverlay=uart5,txd5_pin=12,rxd5_pin=13
+# --------------------------------
+EOF
+else
+    echo "Advanced UART config already present."
+fi
+
+# 2.4 Serial Console Cleanup
+echo "Disabling serial console..."
 systemctl stop serial-getty@ttyS0.service || true
 systemctl disable serial-getty@ttyS0.service || true
 
-# Remove serial console from kernel cmdline
 if grep -q "console=serial0,115200" /boot/cmdline.txt; then
-    echo "Removing serial console from cmdline.txt..."
     sed -i 's/console=serial0,115200//g' /boot/cmdline.txt
     sed -i 's/  / /g' /boot/cmdline.txt
 fi
 
-# GPSD default configuration
-# NOTE: Device is fixed to /dev/ttyS0 (UART)
+# 2.5 GPSD Configuration
 echo "Configuring GPSD for /dev/ttyS0..."
 cat <<EOF > /etc/default/gpsd
 # Default settings for the gpsd init script and hotplug wrapper
@@ -95,7 +129,7 @@ DEVICES="/dev/ttyS0"
 GPSD_OPTIONS="-n"
 EOF
 
-# RTC configuration (DS3231)
+# 2.6 RTC Configuration (DS3231)
 echo "Configuring DS3231 RTC..."
 if [ ! -d "/home/$TARGET_USER/config-rtc" ]; then
     sudo -u "$TARGET_USER" git clone https://github.com/Seeed-Studio/pi-hats.git "/home/$TARGET_USER/config-rtc"
@@ -119,26 +153,25 @@ else
 fi
 
 # ==========================================
-# 4. User Environment Setup (Oh My Bash & Vim)
+# 4. User Environment Setup
 # ==========================================
 echo "--- 4. Customizing environment for user: $TARGET_USER ---"
 
-# Run this block as TARGET_USER to preserve permissions
 sudo -u "$TARGET_USER" bash <<'EOF'
-    # Oh My Bash installation
+    # Oh My Bash
     if [ ! -d "$HOME/.oh-my-bash" ]; then
         echo "Installing Oh My Bash..."
         bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)" --unattended
     fi
 
-    # Ultimate Vim configuration
+    # Ultimate Vim
     if [ ! -d "$HOME/.vim_runtime" ]; then
         echo "Installing Ultimate Vim..."
         git clone --depth=1 https://github.com/amix/vimrc.git ~/.vim_runtime
         sh ~/.vim_runtime/install_awesome_vimrc.sh
     fi
 
-    # Vim plugins
+    # Vim Plugins
     echo "Installing Vim plugins..."
     mkdir -p ~/.vim_runtime/my_plugins
 
@@ -156,18 +189,50 @@ sudo -u "$TARGET_USER" bash <<'EOF'
             git clone "https://github.com/$repo.git" "$HOME/.vim_runtime/my_plugins/$dirname"
         fi
     done
-
-    # Custom Vim configuration
-    curl -fsSLo ~/.vim_runtime/my_configs.vim \
-    https://gist.githubusercontent.com/branny-dev/141770d40dd364403555e85304201ca7/raw/f53157986a9fa661dbaf66a79c2b786537f7b7c1/my_configs.vim
 EOF
+
+# --- INJECTING CUSTOM VIM CONFIG (No External Link) ---
+echo "Applying custom Vim configuration..."
+VIM_CONFIG_FILE="$USER_HOME/.vim_runtime/my_configs.vim"
+
+cat <<VIMCONF > "$VIM_CONFIG_FILE"
+" vim ~/.vim_runtime/my_configs.vim
+
+" Custom Theme peaksea | ir_black | pyte | solarized
+colorscheme pyte
+
+" Set number line
+set nu
+
+" 1 tab == 2 spaces
+set shiftwidth=2
+set tabstop=2
+
+" Git Grutter
+let g:gitgutter_enabled = 1
+
+" Set updatetime (for GitGutter git diff)
+set updatetime=100
+
+" indentLine
+let g:indentLine_char = '▏'
+let g:indentLine_color_term = 235
+
+" Fold level
+set foldlevel=99
+
+" Nerdtree hidden
+let NERDTreeShowHidden=1
+VIMCONF
+
+# Ensure correct ownership for the Vim config file
+chown "$TARGET_USER:$TARGET_USER" "$VIM_CONFIG_FILE"
+
 
 # ==========================================
 # 5. Python Libraries
 # ==========================================
 echo "--- 5. Installing Python libraries ---"
-
-# NOTE: Installed at system level, not virtualenv
 pip3 install \
     digi-xbee \
     rich \
@@ -258,10 +323,14 @@ echo ""
 echo "✅ INSTALLATION COMPLETED SUCCESSFULLY"
 echo "-----------------------------------------------------"
 echo "Summary:"
-echo " - Target user: $TARGET_USER"
-echo " - Docker installed: Yes"
-echo " - GPSD device: /dev/ttyS0"
-echo " - Dockerpipe FIFO: $PIPE_DIR/$PIPE_FILE"
+echo " - User: $TARGET_USER"
+echo " - Docker: Installed"
+echo " - Audio: Default Card 1"
+echo " - Graphics: libbrcm links created"
+echo " - UART: Advanced overlays applied"
+echo " - GPSD: /dev/ttyS0"
+echo " - Vim: Custom config applied"
+echo " - Dockerpipe: Active"
 echo "-----------------------------------------------------"
 echo "⚠️  WARNING: A reboot is required to apply UART and permission changes."
 echo "Rebooting in 10 seconds... (Ctrl+C to cancel)"
