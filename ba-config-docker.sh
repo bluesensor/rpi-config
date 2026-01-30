@@ -161,22 +161,47 @@ chmod +x dockerpipe.sh
 echo -e "${GREEN}📝 Updating update_safe.sh...${NC}"
 cat <<'EOF' > update_safe.sh
 #!/bin/bash
+# ==============================================================================
+# BLUEACOUSTIC AUTO-UPDATE SCRIPT (Safe & Force Mode)
+# ==============================================================================
+# Manual usage to force an update:
+# ./update_safe.sh force
+# ==============================================================================
+
+# --- CONFIGURATION ---
 LOG_FILE="/home/bs/blueacoustic/logs/system/update_process.log"
 LOCK_FILE="/tmp/ba_update.lock"
 DAILY_FLAG="/tmp/ba_updated_session"
+AUTH_CONFIG="/home/bs/.docker/config.json" # Path to Docker credentials
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"; }
+# --- HELPER FUNCTIONS ---
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
 
-if [ -f "$LOCK_FILE" ]; then exit 0; fi
+# --- 1. CONCURRENCY CHECK (LOCK FILE) ---
+if [ -f "$LOCK_FILE" ]; then
+    if [ "$1" == "force" ]; then
+        echo "⚠️  WARNING: An update is already in progress. Please wait."
+    fi
+    exit 0
+fi
 touch "$LOCK_FILE"
 
-# Ping Check (Google DNS)
+# --- 2. FORCE MODE ---
+# If "force" argument is passed, remove the daily flag
+if [ "$1" == "force" ]; then
+    log "⚡ FORCE MODE: Ignoring daily session limit."
+    rm -f "$DAILY_FLAG"
+fi
+
+# --- 3. INTERNET CONNECTIVITY CHECK ---
 if ! ping -c 3 -W 5 8.8.8.8 &> /dev/null; then
     rm -f "$LOCK_FILE"
     exit 0
 fi
 
-# Session Check (Avoid update loops during a single internet session)
+# --- 4. SESSION CHECK (DATA SAVER) ---
 if [ -f "$DAILY_FLAG" ]; then
     rm -f "$LOCK_FILE"
     exit 0
@@ -184,22 +209,27 @@ fi
 
 log "🌐 Internet detected. Starting Watchtower update..."
 
+# --- 5. EXECUTE WATCHTOWER ---
 /usr/bin/docker run --rm \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -v /home/bs/.docker/config.json:/config.json \
+    -v "$AUTH_CONFIG":/config.json \
     containrrr/watchtower \
     --run-once \
     --cleanup \
     blueacoustic >> "$LOG_FILE" 2>&1
 
-if [ $? -eq 0 ]; then
-    log "✅ Update process finished."
+EXIT_CODE=$?
+
+# --- 6. RESULT HANDLING ---
+if [ $EXIT_CODE -eq 0 ]; then
+    log "✅ Process finished successfully."
     touch "$DAILY_FLAG"
 else
-    log "🔥 Update failed."
+    log "🔥 CRITICAL ERROR: Update process failed. Check logs."
 fi
 
 rm -f "$LOCK_FILE"
+exit $EXIT_CODE
 EOF
 chmod +x update_safe.sh
 
@@ -226,11 +256,11 @@ echo -e "   -> Cron job set: Run update_safe.sh every 5 minutes."
 echo -e "${GREEN}🔊 Verifying Audio System (PulseAudio Fix)...${NC}"
 
 # We detect if Docker mistakenly created a FOLDER where the socket should go
-# if [ -d "/run/user/1000/pulse/native" ]; then
-#     echo -e "${YELLOW}⚠️  Invalid directory detected at Pulse socket path. Removing it...${NC}"
-#     # We deleted the fake folder that caused the "not a directory" error
-#     sudo rm -rf /run/user/1000/pulse/native
-# fi
+if [ -d "/run/user/1000/pulse/native" ]; then
+    echo -e "${YELLOW}⚠️  Invalid directory detected at Pulse socket path. Removing it...${NC}"
+    # We deleted the fake folder that caused the "not a directory" error
+    sudo rm -rf /run/user/1000/pulse/native
+fi
 
 # We make sure the audio service is running
 if ! pulseaudio --check; then
