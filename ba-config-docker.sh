@@ -105,15 +105,16 @@ services:
     network_mode: "host"
 
     devices:
-      - /dev/input
       - /dev/snd
-      - /dev/snd:/dev/snd
+      - /dev/input
       - /dev/baXB0
       - /dev/baENE0
-      - /dev/ttyAMA3
+      - /dev/ttyS0
+
+    group_add:
+      - audio
 
     environment:
-      - PULSE_SERVER=unix:/run/user/1000/pulse/native
       - XBEE_DEVICE=/dev/baXB0
       - XBEE_BAUD_RATE=9600
       - EPEVER_DEVICE=/dev/baENE0
@@ -122,12 +123,17 @@ services:
       - LOG_LEVEL=INFO
 
     volumes:
+      # 1. The Pipe (Leave this in /opt/cmdpipe, it's a system standard)
       - /opt/cmdpipe:/hostpipe
+
+      # 2. Logs and Storage (Keep these in your home for persistence)
       - /home/bs/blueacoustic/logs:/blueacoustic/logs
       - /home/bs/blueacoustic/storage.json:/blueacoustic/storage.json
+
+      # 3. System Configs (Leave these as-is to reflect host settings)
       - /boot/config.txt:/host/boot/config.txt
-      - /run/user/1000/pulse/native:/run/user/1000/pulse/native
-      - /home/bs/.config/pulse/:/root/.config/pulse/
+
+      # 4. Timezone Info (Keep container time in sync with host)
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 EOF
