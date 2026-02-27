@@ -256,6 +256,28 @@ pip3 install \
     rich \
     schedule
 
+# ===============================
+# Install epevermodbus (HOST)
+# ===============================
+
+echo "Installing epevermodbus on host..."
+
+# Ensure pip is installed
+if ! command -v pip3 >/dev/null 2>&1; then
+    echo "Installing python3-pip..."
+    sudo apt update
+    sudo apt install -y python3-pip
+fi
+
+# Install globally only if not already installed
+if ! command -v epevermodbus >/dev/null 2>&1; then
+    sudo python3 -m pip install --upgrade pip
+    sudo python3 -m pip install git+https://github.com/jhon-p16/epevermodbus.git
+    echo "epevermodbus installed successfully."
+else
+    echo "epevermodbus already installed. Skipping."
+fi
+
 # ==========================================
 # 6. Dockerpipe IPC Configuration
 # ==========================================
