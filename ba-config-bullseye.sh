@@ -67,12 +67,31 @@ apt install -y \
 # ==========================================
 echo "--- 2. Configuring Hardware ---"
 
-# 2.1 Audio Configuration
-echo "Configuring Audio Defaults (Card 1)..."
+# 2.1 Audio Configuration (Force USB as default - Disable HDMI & onboard audio)
+echo "Configuring Audio: Disabling onboard and HDMI audio..."
+
+# Backup config.txt only once
+if [ ! -f /boot/config.txt.bak ]; then
+    cp /boot/config.txt /boot/config.txt.bak
+fi
+
+# Disable onboard audio
+if grep -q "^dtparam=audio=on" /boot/config.txt; then
+    sed -i 's/^dtparam=audio=on/dtparam=audio=off/g' /boot/config.txt
+fi
+
+# Disable HDMI audio if vc4 overlay exists
+if grep -q "^dtoverlay=vc4-kms-v3d" /boot/config.txt; then
+    sed -i 's/^dtoverlay=vc4-kms-v3d.*/dtoverlay=vc4-kms-v3d,audio=off/g' /boot/config.txt
+fi
+
+# Ensure ALSA default points to card 1 (USB will be first active device)
 cat <<EOF > /etc/asound.conf
 defaults.pcm.card 1
 defaults.ctl.card 1
 EOF
+
+echo "Audio configuration applied (USB interface will remain fixed)."
 
 # 2.2 Graphics Symlinks (Legacy BRCM support)
 echo "Creating Graphics Symlinks..."
