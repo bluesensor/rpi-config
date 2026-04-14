@@ -282,6 +282,21 @@ else
      echo -e "${YELLOW}⚠️  Warning: Audio socket still missing. Restarting Raspberry might be needed.${NC}"
 fi
 
+# --- PROPAGATE DOCKER CREDENTIALS: root → bs ---
+echo -e "${GREEN}🔑 Propagating Docker credentials to bs user...${NC}"
+if [ -f /root/.docker/config.json ]; then
+    [ -d /home/bs/.docker/config.json ] && rm -rf /home/bs/.docker/config.json
+    mkdir -p /home/bs/.docker
+    cp /root/.docker/config.json /home/bs/.docker/config.json
+    chown -R bs:bs /home/bs/.docker
+    chmod 700 /home/bs/.docker
+    chmod 600 /home/bs/.docker/config.json
+    echo "   -> OK: credentials copied to /home/bs/.docker/config.json ✅"
+else
+    echo -e "${YELLOW}⚠️  No root credentials found. Did you run 'sudo docker login'?${NC}"
+    exit 1
+fi
+
 # ---------------------------------------------------------
 # 10. Deployment
 # ---------------------------------------------------------
