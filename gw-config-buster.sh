@@ -30,7 +30,7 @@ if grep -q "console=serial0,115200" /boot/cmdline.txt; then
 fi
 
 # -------------------------
-# Essential packages (Trixie)
+# Essential packages
 # -------------------------
 echo "Installing essential packages..."
 sudo apt install -y \
@@ -44,12 +44,11 @@ sudo apt install -y \
     curl \
     gnupg
 
-
 # Verificar la versión de Nmap
 echo "Checking Nmap version..."
 nmap --version
 
-# Instalación de Oh My Bash (mejorada)
+# Instalación de Oh My Bash
 echo "Checking Oh My Bash installation..."
 if [ ! -d ~/.oh-my-bash ]; then
     echo "Installing Oh My Bash..."
@@ -104,7 +103,6 @@ curl -fsSLo ~/.vim_runtime/my_configs.vim \
 https://gist.githubusercontent.com/branny-dev/141770d40dd364403555e85304201ca7/raw/f53157986a9fa661dbaf66a79c2b786537f7b7c1/my_configs.vim
 
 
-
 # -------------------------
 # RTC DS3231
 # -------------------------
@@ -121,17 +119,38 @@ fi
 sudo i2cdetect -y 1 || true
 
 # -------------------------
-# Docker (Fix para Buster 32-bit)
+# Docker (Fix para Buster 32-bit - EOL, usamos script de conveniencia)
 # -------------------------
+# Raspbian Buster alcanzó EOL en junio 2024 y Docker dejó de publicar
+# paquetes en download.docker.com/linux/raspbian/dists/buster.
+# Usamos get.docker.com que es la vía oficial recomendada por Docker
+# para distros EOL. Detecta automáticamente arquitectura (armv7/armv6)
+# y hace best-effort para Buster.
 echo "Installing Docker..."
-sudo apt-get update
-sudo apt-get install \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-compose-plugin \
-  docker-ce-rootless-extras \
-  docker-buildx-plugin
+if ! command -v docker &>/dev/null; then
+    echo "Docker not found. Installing via get.docker.com..."
+    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+    sudo sh /tmp/get-docker.sh
+    rm -f /tmp/get-docker.sh
+
+    # Agregar usuario al grupo docker (toma efecto tras re-login)
+    sudo usermod -aG docker "$USER"
+
+    # Habilitar e iniciar el servicio (crítico en gateway desatendido)
+    sudo systemctl enable docker
+    sudo systemctl start docker
+else
+    echo "Docker already installed: $(docker --version)"
+fi
+
+# Fix para iptables en Buster (conflicto nftables vs legacy)
+if command -v update-alternatives &>/dev/null; then
+    sudo update-alternatives --set iptables /usr/sbin/iptables-legacy 2>/dev/null || true
+fi
+
+# Verify
+docker --version || echo "WARNING: Docker install may have failed"
+docker compose version || echo "WARNING: docker compose plugin missing"
 
 
 # -------------------------
@@ -154,9 +173,10 @@ fi
 
 # Aplicar configuraciones
 echo "Applying environment changes..."
-source ~/.bashrc
+source ~/.bashrc || true
 
 echo "Configuration completed successfully."
+echo "NOTE: You must log out and back in for docker group membership to take effect."
 echo "A system reboot is required to apply UART changes and other configurations."
 echo "Rebooting in 10 seconds... (press Ctrl+C to cancel)"
 sleep 10
