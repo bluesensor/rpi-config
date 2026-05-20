@@ -4,7 +4,8 @@
 # BLUEACOUSTIC INSTALLER - SAFE MODE (IDEMPOTENT)
 # ==============================================================================
 # This script is IDEMPOTENT: It can be executed multiple times without the risk
-# of losing configuration data (storage.json) or creating duplicate Cron tasks.
+# of losing configuration data (storage.json, docker-compose.yml) or creating
+# duplicate Cron tasks.
 # ==============================================================================
 
 GREEN='\033[0;32m'
@@ -90,11 +91,24 @@ EOF
 fi
 
 # ---------------------------------------------------------
-# 4. INFRASTRUCTURE (DOCKER-COMPOSE)
+# 4. INFRASTRUCTURE (DOCKER-COMPOSE) - SITE-SPECIFIC (PROTECTED)
 # ---------------------------------------------------------
-# This file is always updated to ensure the container structure matches the latest version
-echo -e "${GREEN}📝 Updating docker-compose.yml...${NC}"
-cat <<EOF > docker-compose.yml
+# CRITICAL: docker-compose.yml contains hardware-specific configuration
+# (serial ports, devices) that varies between BlueAcoustic units:
+#   - XBee port: ttyS0 (with shield) / ttyAMA2 / ttyAMA3 (without shield)
+#   - Solar controller (EPEVER): baENE0 device only present on some units
+# We protect it from being overwritten on re-runs.
+if [ -f "docker-compose.yml" ]; then
+    echo -e "${YELLOW}🛡️  docker-compose.yml detected. SKIPPING overwrite.${NC}"
+    echo -e "${YELLOW}   -> This file contains hardware-specific config for THIS BA.${NC}"
+    echo -e "${YELLOW}   -> If you need to regenerate the default template:${NC}"
+    echo -e "${YELLOW}      mv docker-compose.yml docker-compose.yml.bak && re-run installer${NC}"
+else
+    echo -e "${GREEN}📝 Creating default docker-compose.yml...${NC}"
+    echo -e "${YELLOW}   ⚠️  Remember to adjust devices according to this BA's hardware:${NC}"
+    echo -e "${YELLOW}      - XBee port: ttyS0 / ttyAMA2 / ttyAMA3${NC}"
+    echo -e "${YELLOW}      - EPEVER solar controller: include baENE0 only if present${NC}"
+    cat <<EOF > docker-compose.yml
 version: "3.3"
 
 services:
@@ -137,6 +151,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 EOF
+fi
 
 # ---------------------------------------------------------
 # 5. Generate dockerpipe.sh
